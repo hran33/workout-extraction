@@ -74,25 +74,59 @@ app.post('/extract', async (req, res) => {
     tmpVideo = path.join(os.tmpdir(), `xhs-video-${Date.now()}.mp4`);
     await downloadFile(videoUrl, tmpVideo);
 
-    // 3. Extract 16 evenly-spaced frames
-    const NUM_FRAMES = 16;
+    // 3. Extract 1fps frames, use OCR on bottom strip to detect text changes,
+    //    then pick up to 8 frames where the text overlay changed (new exercise).
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhs-frames-'));
+    const allFramesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhs-all-'));
 
     const probeOut = execSync(
       `ffprobe -v error -select_streams v:0 -show_entries stream=duration -of csv=p=0 "${tmpVideo}"`,
       { encoding: 'utf8' }
     ).trim();
     const duration = parseFloat(probeOut) || 60;
-    const interval = duration / (NUM_FRAMES + 1);
 
-    for (let i = 1; i <= NUM_FRAMES; i++) {
-      const ts = (interval * i).toFixed(2);
+    // Extract 1 frame per second, crop bottom 25% for OCR
+    execSync(
+      `ffmpeg -i "${tmpVideo}" -vf "fps=1,crop=iw:ih/4:0:ih*3/4,scale=768:-1" "${allFramesDir}/frame%04d.jpg" -y 2>/dev/null`,
+      { stdio: 'pipe' }
+    );
+
+    const allFrames = fs.readdirSync(allFramesDir).filter(f => f.endsWith('.jpg')).sort();
+
+    // OCR each strip and find frames where text changed
+    let lastText = '';
+    const textChangeFrames = [];
+    for (const file of allFrames) {
+      const framePath = path.join(allFramesDir, file);
+      let ocrText = '';
+      try {
+        ocrText = execSync(`tesseract "${framePath}" stdout --psm 6 2>/dev/null`, { encoding: 'utf8' }).trim();
+      } catch { /* tesseract not available or no text */ }
+      if (ocrText && ocrText !== lastText) {
+        textChangeFrames.push(file);
+        lastText = ocrText;
+      }
+    }
+
+    // Pick up to 8 text-change frames, evenly spaced if more
+    const MAX_FRAMES = 8;
+    let selectedFrameNums = textChangeFrames.length > 0 ? textChangeFrames : allFrames;
+    if (selectedFrameNums.length > MAX_FRAMES) {
+      const step = selectedFrameNums.length / MAX_FRAMES;
+      selectedFrameNums = Array.from({ length: MAX_FRAMES }, (_, i) => selectedFrameNums[Math.floor(i * step)]);
+    }
+
+    // Extract full-resolution versions of selected frames
+    for (let i = 0; i < selectedFrameNums.length; i++) {
+      const frameNum = selectedFrameNums[i].match(/\d+/)[0];
+      const ts = (parseInt(frameNum) - 1).toString();
       execSync(
-        `ffmpeg -ss ${ts} -i "${tmpVideo}" -frames:v 1 -vf "scale=768:-1" "${tmpDir}/frame${String(i).padStart(4, '0')}.jpg" -y 2>/dev/null`,
+        `ffmpeg -ss ${ts} -i "${tmpVideo}" -frames:v 1 -vf "scale=768:-1" "${tmpDir}/frame${String(i + 1).padStart(4, '0')}.jpg" -y 2>/dev/null`,
         { stdio: 'pipe' }
       );
     }
 
+    fs.rmSync(allFramesDir, { recursive: true, force: true });
     const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
 
     // 4. Send frames + caption to Claude
