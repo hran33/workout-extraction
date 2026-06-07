@@ -94,17 +94,7 @@ app.post('/extract', async (req, res) => {
       );
     }
 
-    // Dedupe: remove frames with identical file size (same frozen frame)
-    const allFrameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
-    const frameFiles = [];
-    let lastSize = -1;
-    for (const file of allFrameFiles) {
-      const size = fs.statSync(path.join(tmpDir, file)).size;
-      if (size !== lastSize) {
-        frameFiles.push(file);
-        lastSize = size;
-      }
-    }
+    const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
 
     // 4. Send frames + caption to Claude
     const userContent = [];
@@ -122,7 +112,7 @@ app.post('/extract', async (req, res) => {
 
 Post caption: "${caption}"
 
-Please analyze the frames and caption to produce a detailed, structured workout outline. Return JSON with this exact shape:
+Please analyze the frames and caption to produce a detailed, structured workout outline. Multiple frames may show the same exercise — list each unique exercise only once. Return JSON with this exact shape:
 
 {
   "workoutType": "",
