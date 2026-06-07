@@ -175,7 +175,8 @@ For each exercise you can identify from the frames, fill in name, sets/reps/dura
     tmpDir = null;
     tmpVideo = null;
 
-    res.json({ success: true, text: plainText, frames, workout, caption });
+    const title = workout.workoutType || 'Workout';
+    res.json({ success: true, title, text: plainText, frames, workout, caption });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
