@@ -74,41 +74,26 @@ app.post('/extract', async (req, res) => {
     tmpVideo = path.join(os.tmpdir(), `xhs-video-${Date.now()}.mp4`);
     await downloadFile(videoUrl, tmpVideo);
 
-    // 3. Extract frames via scene detection, capped at 16
-    const MAX_FRAMES = 16;
+    // 3. Extract 16 evenly-spaced frames
+    const NUM_FRAMES = 16;
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhs-frames-'));
 
-    execSync(
-      `ffmpeg -i "${tmpVideo}" -vf "select='gt(scene,0.3)',scale=768:-1" -vsync vfr "${tmpDir}/frame%04d.jpg" -y 2>/dev/null`,
-      { stdio: 'pipe' }
-    );
+    const probeOut = execSync(
+      `ffprobe -v error -select_streams v:0 -show_entries stream=duration -of csv=p=0 "${tmpVideo}"`,
+      { encoding: 'utf8' }
+    ).trim();
+    const duration = parseFloat(probeOut) || 60;
+    const interval = duration / (NUM_FRAMES + 1);
 
-    let frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
-
-    // If scene detection gave too few frames, fall back to evenly-spaced
-    if (frameFiles.length < 4) {
-      fs.readdirSync(tmpDir).forEach(f => fs.unlinkSync(path.join(tmpDir, f)));
-      const probeOut = execSync(
-        `ffprobe -v error -select_streams v:0 -show_entries stream=duration -of csv=p=0 "${tmpVideo}"`,
-        { encoding: 'utf8' }
-      ).trim();
-      const duration = parseFloat(probeOut) || 60;
-      const interval = duration / 9;
-      for (let i = 1; i <= 8; i++) {
-        const ts = (interval * i).toFixed(2);
-        execSync(
-          `ffmpeg -ss ${ts} -i "${tmpVideo}" -frames:v 1 -vf "scale=768:-1" "${tmpDir}/frame${String(i).padStart(4, '0')}.jpg" -y 2>/dev/null`,
-          { stdio: 'pipe' }
-        );
-      }
-      frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
+    for (let i = 1; i <= NUM_FRAMES; i++) {
+      const ts = (interval * i).toFixed(2);
+      execSync(
+        `ffmpeg -ss ${ts} -i "${tmpVideo}" -frames:v 1 -vf "scale=768:-1" "${tmpDir}/frame${String(i).padStart(4, '0')}.jpg" -y 2>/dev/null`,
+        { stdio: 'pipe' }
+      );
     }
 
-    // Cap at MAX_FRAMES evenly spaced across what we got
-    if (frameFiles.length > MAX_FRAMES) {
-      const step = frameFiles.length / MAX_FRAMES;
-      frameFiles = Array.from({ length: MAX_FRAMES }, (_, i) => frameFiles[Math.floor(i * step)]);
-    }
+    const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
 
     // 4. Send frames + caption to Claude
     const userContent = [];
