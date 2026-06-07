@@ -96,9 +96,41 @@ app.post('/extract', async (req, res) => {
 
     const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
 
-    // 4. Send frames + caption to Claude
+    // 4. Pass 1 — Haiku reads text overlay from each frame in parallel
+    const ocrResults = await Promise.all(frameFiles.map(async (file) => {
+      const imgData = fs.readFileSync(path.join(tmpDir, file));
+      try {
+        const res = await client.messages.create({
+          model: 'claude-haiku-4-5',
+          max_tokens: 64,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imgData.toString('base64') } },
+              { type: 'text', text: 'Read the exercise name or label text visible in this image. Reply with only that text. If no exercise label is visible, reply with nothing.' }
+            ]
+          }]
+        });
+        return { file, label: res.content.find(b => b.type === 'text')?.text?.trim() ?? '' };
+      } catch {
+        return { file, label: '' };
+      }
+    }));
+
+    // Dedupe: keep only the first frame per unique label
+    const seenLabels = new Set();
+    const uniqueFrames = [];
+    for (const { file, label } of ocrResults) {
+      const key = label || file; // if no label, treat each frame as unique
+      if (!seenLabels.has(key)) {
+        seenLabels.add(key);
+        uniqueFrames.push(file);
+      }
+    }
+
+    // 5. Pass 2 — Opus analyzes only unique frames
     const userContent = [];
-    for (const file of frameFiles) {
+    for (const file of uniqueFrames) {
       const imgData = fs.readFileSync(path.join(tmpDir, file));
       userContent.push({
         type: 'image',
@@ -112,7 +144,7 @@ app.post('/extract', async (req, res) => {
 
 Post caption: "${caption}"
 
-Please analyze the frames and caption to produce a detailed, structured workout outline. Each exercise in this video has a text overlay naming it — use that text as the exercise name. Multiple frames may show the same exercise (same text overlay, different body position) — list each unique exercise only once. Return JSON with this exact shape:
+Please analyze the frames and caption to produce a detailed, structured workout outline. Each frame shows a unique exercise — use the text overlay on each frame as the exercise name. Return JSON with this exact shape:
 
 {
   "workoutType": "",
