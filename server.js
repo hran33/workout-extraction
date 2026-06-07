@@ -85,9 +85,9 @@ app.post('/extract', async (req, res) => {
     ).trim();
     const duration = parseFloat(probeOut) || 60;
 
-    // Extract 1 frame every 2 seconds, scaled down for fast OCR
+    // Extract 1 frame every 5 seconds, scaled down for fast OCR
     execSync(
-      `ffmpeg -i "${tmpVideo}" -vf "fps=0.5,scale=384:-1" "${allFramesDir}/frame%04d.jpg" -y 2>/dev/null`,
+      `ffmpeg -i "${tmpVideo}" -vf "fps=0.2,scale=384:-1" "${allFramesDir}/frame%04d.jpg" -y 2>/dev/null`,
       { stdio: 'pipe' }
     );
 
