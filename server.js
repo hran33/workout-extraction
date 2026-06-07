@@ -74,78 +74,26 @@ app.post('/extract', async (req, res) => {
     tmpVideo = path.join(os.tmpdir(), `xhs-video-${Date.now()}.mp4`);
     await downloadFile(videoUrl, tmpVideo);
 
-    // 3. Extract 1fps frames, use OCR on bottom strip to detect text changes,
-    //    then pick up to 8 frames where the text overlay changed (new exercise).
+    // 3. Extract 12 evenly-spaced frames
+    const NUM_FRAMES = 12;
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhs-frames-'));
-    const allFramesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhs-all-'));
+    const client = new Anthropic();
 
     const probeOut = execSync(
       `ffprobe -v error -select_streams v:0 -show_entries stream=duration -of csv=p=0 "${tmpVideo}"`,
       { encoding: 'utf8' }
     ).trim();
     const duration = parseFloat(probeOut) || 60;
+    const interval = duration / (NUM_FRAMES + 1);
 
-    // Extract 1 frame every 5 seconds, scaled down for fast OCR
-    execSync(
-      `ffmpeg -i "${tmpVideo}" -vf "fps=0.2,scale=384:-1" "${allFramesDir}/frame%04d.jpg" -y 2>/dev/null`,
-      { stdio: 'pipe' }
-    );
-
-    const allFrames = fs.readdirSync(allFramesDir).filter(f => f.endsWith('.jpg')).sort();
-
-    // Use Claude Haiku to read text overlay from each strip, detect changes
-    const client = new Anthropic();
-
-    // Run all Haiku OCR calls in parallel
-    const ocrResults = await Promise.all(allFrames.map(async (file) => {
-      const imgData = fs.readFileSync(path.join(allFramesDir, file));
-      try {
-        const ocrResponse = await client.messages.create({
-          model: 'claude-haiku-4-5',
-          max_tokens: 64,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imgData.toString('base64') } },
-              { type: 'text', text: 'Read any text visible in this image. Reply with only the text, nothing else. If no text, reply with nothing.' }
-            ]
-          }]
-        });
-        return { file, text: ocrResponse.content.find(b => b.type === 'text')?.text?.trim() ?? '' };
-      } catch {
-        return { file, text: '' };
-      }
-    }));
-
-    // Pick frames where text changed from previous frame
-    const textChangeFrames = [];
-    let lastText = '';
-    for (const { file, text } of ocrResults) {
-      if (text && text !== lastText) {
-        textChangeFrames.push(file);
-        lastText = text;
-      }
-    }
-
-    // Pick up to 8 text-change frames, evenly spaced if more
-    const MAX_FRAMES = 8;
-    let selectedFrameNums = textChangeFrames.length > 0 ? textChangeFrames : allFrames;
-    if (selectedFrameNums.length > MAX_FRAMES) {
-      const step = selectedFrameNums.length / MAX_FRAMES;
-      selectedFrameNums = Array.from({ length: MAX_FRAMES }, (_, i) => selectedFrameNums[Math.floor(i * step)]);
-    }
-
-    // Extract full-resolution versions of selected frames
-    for (let i = 0; i < selectedFrameNums.length; i++) {
-      const frameNum = selectedFrameNums[i].match(/\d+/)[0];
-      const ts = (parseInt(frameNum) - 1).toString();
+    for (let i = 1; i <= NUM_FRAMES; i++) {
+      const ts = (interval * i).toFixed(2);
       execSync(
-        `ffmpeg -ss ${ts} -i "${tmpVideo}" -frames:v 1 -vf "scale=768:-1" "${tmpDir}/frame${String(i + 1).padStart(4, '0')}.jpg" -y 2>/dev/null`,
+        `ffmpeg -ss ${ts} -i "${tmpVideo}" -frames:v 1 -vf "scale=768:-1" "${tmpDir}/frame${String(i).padStart(4, '0')}.jpg" -y 2>/dev/null`,
         { stdio: 'pipe' }
       );
     }
 
-    fs.rmSync(allFramesDir, { recursive: true, force: true });
     const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
 
     // 4. Send frames + caption to Claude
