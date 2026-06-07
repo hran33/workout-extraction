@@ -95,11 +95,10 @@ app.post('/extract', async (req, res) => {
 
     // Use Claude Haiku to read text overlay from each strip, detect changes
     const client = new Anthropic();
-    let lastText = '';
-    const textChangeFrames = [];
-    for (const file of allFrames) {
+
+    // Run all Haiku OCR calls in parallel
+    const ocrResults = await Promise.all(allFrames.map(async (file) => {
       const imgData = fs.readFileSync(path.join(allFramesDir, file));
-      let ocrText = '';
       try {
         const ocrResponse = await client.messages.create({
           model: 'claude-haiku-4-5',
@@ -112,11 +111,19 @@ app.post('/extract', async (req, res) => {
             ]
           }]
         });
-        ocrText = ocrResponse.content.find(b => b.type === 'text')?.text?.trim() ?? '';
-      } catch { /* skip on error */ }
-      if (ocrText && ocrText !== lastText) {
+        return { file, text: ocrResponse.content.find(b => b.type === 'text')?.text?.trim() ?? '' };
+      } catch {
+        return { file, text: '' };
+      }
+    }));
+
+    // Pick frames where text changed from previous frame
+    const textChangeFrames = [];
+    let lastText = '';
+    for (const { file, text } of ocrResults) {
+      if (text && text !== lastText) {
         textChangeFrames.push(file);
-        lastText = ocrText;
+        lastText = text;
       }
     }
 
