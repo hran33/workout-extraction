@@ -94,7 +94,17 @@ app.post('/extract', async (req, res) => {
       );
     }
 
-    const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
+    // Dedupe: remove frames with identical file size (same frozen frame)
+    const allFrameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
+    const frameFiles = [];
+    let lastSize = -1;
+    for (const file of allFrameFiles) {
+      const size = fs.statSync(path.join(tmpDir, file)).size;
+      if (size !== lastSize) {
+        frameFiles.push(file);
+        lastSize = size;
+      }
+    }
 
     // 4. Send frames + caption to Claude
     const userContent = [];
