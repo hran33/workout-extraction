@@ -155,7 +155,8 @@ For each exercise you can identify from the frames, fill in name, sets/reps/dura
         const repsOrDuration = ex.reps ? `${ex.reps} reps` : ex.duration || '';
         const sets = ex.sets ? `${ex.sets} sets x ` : '';
         lines.push(`${i + 1}. ${ex.name} — ${sets}${repsOrDuration}`);
-        if (ex.cues) lines.push(`   ${ex.cues}`);
+        if (ex.cues) lines.push(`↳ ${ex.cues}`);
+        lines.push('');
       });
       if (workout.notes) {
         lines.push('');
