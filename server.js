@@ -93,15 +93,27 @@ app.post('/extract', async (req, res) => {
 
     const allFrames = fs.readdirSync(allFramesDir).filter(f => f.endsWith('.jpg')).sort();
 
-    // OCR each strip and find frames where text changed
+    // Use Claude Haiku to read text overlay from each strip, detect changes
+    const client = new Anthropic();
     let lastText = '';
     const textChangeFrames = [];
     for (const file of allFrames) {
-      const framePath = path.join(allFramesDir, file);
+      const imgData = fs.readFileSync(path.join(allFramesDir, file));
       let ocrText = '';
       try {
-        ocrText = execSync(`tesseract "${framePath}" stdout --psm 6 2>/dev/null`, { encoding: 'utf8' }).trim();
-      } catch { /* tesseract not available or no text */ }
+        const ocrResponse = await client.messages.create({
+          model: 'claude-haiku-4-5',
+          max_tokens: 64,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imgData.toString('base64') } },
+              { type: 'text', text: 'Read any text visible in this image. Reply with only the text, nothing else. If no text, reply with nothing.' }
+            ]
+          }]
+        });
+        ocrText = ocrResponse.content.find(b => b.type === 'text')?.text?.trim() ?? '';
+      } catch { /* skip on error */ }
       if (ocrText && ocrText !== lastText) {
         textChangeFrames.push(file);
         lastText = ocrText;
@@ -167,7 +179,6 @@ Please analyze the frames and caption to produce a detailed, structured workout 
 For each exercise you can identify from the frames, fill in name, sets/reps/duration if visible, and any form cues shown. If a field cannot be determined, use null or empty string. Return only valid JSON, no markdown fences.`,
     });
 
-    const client = new Anthropic();
     const response = await client.messages.create({
       model: 'claude-opus-4-8',
       max_tokens: 2048,
