@@ -1,0 +1,62 @@
+{
+  "workoutType": "Full body strength + core circuit (dumbbell)",
+  "targetMuscles": [
+    "full body",
+    "posterior chain",
+    "back",
+    "shoulders",
+    "chest",
+    "core",
+    "abs"
+  ],
+  "equipment": [
+    "dumbbells",
+    "exercise mat"
+  ],
+  "estimatedDuration": "20-30 minutes",
+  "exercises": [
+    {
+      "name": "Dumbbell RDL + Row (Romanian Deadlift to Bent-Over Row)",
+      "sets": null,
+      "reps": 15,
+      "duration": "",
+      "cues": "Hinge at hips with soft knees, keep back flat, lower dumbbells along legs, then row dumbbells to ribs squeezing the back"
+    },
+    {
+      "name": "Single-Arm Dumbbell Swing to Press",
+      "sets": null,
+      "reps": 15,
+      "duration": "",
+      "cues": "Drive hips to swing dumbbell up, use momentum to press overhead, keep core braced and free arm out for balance"
+    },
+    {
+      "name": "Push-Up + Plank Dumbbell Row",
+      "sets": null,
+      "reps": 12,
+      "duration": "",
+      "cues": "Perform push-up gripping dumbbells, then row one dumbbell at a time in plank; keep hips square and core tight"
+    },
+    {
+      "name": "Knee Tuck Crunch",
+      "sets": null,
+      "reps": 15,
+      "duration": "",
+      "cues": "Lie back, draw knees toward chest while crunching, control the lower back, exhale at the top"
+    },
+    {
+      "name": "Alternating V-Up (toe touch)",
+      "sets": null,
+      "reps": 15,
+      "duration": "",
+      "cues": "Lift opposite hand to foot, keep legs straight as possible, engage abs, lower with control"
+    },
+    {
+      "name": "Dynamic Plank",
+      "sets": null,
+      "reps": 20,
+      "duration": "",
+      "cues": "Transition between forearm and high plank or shift body forward/back, keep core braced and hips level"
+    }
+  ],
+  "notes": "Structured as two rounds: Round 1 is full-body dumbbell strength (RDL+Row, Swing to Press, Push-Up+Row), Round 2 is core/abs (Knee Tuck Crunch, Alternating V-Up, Dynamic Plank). Caption suggests replacing summer cardio with this to build abs. Likely repeat circuit 2-3 rounds. Rest as needed between rounds; athlete checks watch for timing."
+}
