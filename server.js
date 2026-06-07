@@ -112,7 +112,7 @@ app.post('/extract', async (req, res) => {
 
 Post caption: "${caption}"
 
-Please analyze the frames and caption to produce a detailed, structured workout outline. Multiple frames may show the same exercise — list each unique exercise only once. Return JSON with this exact shape:
+Please analyze the frames and caption to produce a detailed, structured workout outline. Each exercise in this video has a text overlay naming it — use that text as the exercise name. Multiple frames may show the same exercise (same text overlay, different body position) — list each unique exercise only once. Return JSON with this exact shape:
 
 {
   "workoutType": "",
