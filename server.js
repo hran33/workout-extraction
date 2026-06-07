@@ -144,28 +144,38 @@ For each exercise you can identify from the frames, fill in name, sets/reps/dura
     const text = response.content.find((b) => b.type === 'text')?.text ?? '';
     const workout = JSON.parse(text);
 
-    if (req.query.format === 'text') {
-      const lines = [];
-      lines.push(`${workout.workoutType}`);
-      lines.push(`Equipment: ${workout.equipment?.join(', ') || 'none'}`);
-      lines.push(`Duration: ${workout.estimatedDuration || 'unknown'}`);
-      lines.push(`Targets: ${workout.targetMuscles?.join(', ') || 'unknown'}`);
+    // Build plain text
+    const lines = [];
+    lines.push(`${workout.workoutType}`);
+    lines.push(`Equipment: ${workout.equipment?.join(', ') || 'none'}`);
+    lines.push(`Duration: ${workout.estimatedDuration || 'unknown'}`);
+    lines.push(`Targets: ${workout.targetMuscles?.join(', ') || 'unknown'}`);
+    lines.push('');
+    workout.exercises?.forEach((ex, i) => {
+      const repsOrDuration = ex.reps ? `${ex.reps} reps` : ex.duration || '';
+      const sets = ex.sets ? `${ex.sets} sets x ` : '';
+      lines.push(`${i + 1}. ${ex.name} — ${sets}${repsOrDuration}`);
+      if (ex.cues) lines.push(`↳ ${ex.cues}`);
       lines.push('');
-      workout.exercises?.forEach((ex, i) => {
-        const repsOrDuration = ex.reps ? `${ex.reps} reps` : ex.duration || '';
-        const sets = ex.sets ? `${ex.sets} sets x ` : '';
-        lines.push(`${i + 1}. ${ex.name} — ${sets}${repsOrDuration}`);
-        if (ex.cues) lines.push(`↳ ${ex.cues}`);
-        lines.push('');
-      });
-      if (workout.notes) {
-        lines.push('');
-        lines.push(`Notes: ${workout.notes}`);
-      }
-      return res.type('text/plain').send(lines.join('\n'));
+    });
+    if (workout.notes) {
+      lines.push(`Notes: ${workout.notes}`);
     }
+    const plainText = lines.join('\n');
 
-    res.json({ success: true, workout, caption, coverUrl: normalized.coverUrl });
+    // Read frames as base64 before cleanup
+    const frames = frameFiles.map(file => {
+      const imgData = fs.readFileSync(path.join(tmpDir, file));
+      return imgData.toString('base64');
+    });
+
+    // Cleanup before sending response
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.unlink(tmpVideo, () => {});
+    tmpDir = null;
+    tmpVideo = null;
+
+    res.json({ success: true, text: plainText, frames, workout, caption });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
