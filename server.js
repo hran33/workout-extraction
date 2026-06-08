@@ -86,15 +86,13 @@ app.post('/extract', async (req, res) => {
       { encoding: 'utf8' }
     ).trim();
     const duration = parseFloat(probeOut) || 60;
-    const interval = duration / (NUM_FRAMES + 1);
 
-    for (let i = 1; i <= NUM_FRAMES; i++) {
-      const ts = (interval * i).toFixed(2);
-      execSync(
-        `ffmpeg -ss ${ts} -i "${tmpVideo}" -frames:v 1 -vf "scale=768:-1" "${tmpDir}/frame${String(i).padStart(4, '0')}.jpg" -y 2>/dev/null`,
-        { stdio: 'pipe' }
-      );
-    }
+    // Extract all frames in one ffmpeg pass using fps filter
+    const fps = NUM_FRAMES / duration;
+    execSync(
+      `ffmpeg -i "${tmpVideo}" -vf "fps=${fps.toFixed(4)},scale=768:-1" "${tmpDir}/frame%04d.jpg" -y 2>/dev/null`,
+      { stdio: 'pipe' }
+    );
 
     const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
     console.log(`[timing] frame extraction: ${Date.now() - t}ms`); t = Date.now();
