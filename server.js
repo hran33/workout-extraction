@@ -71,8 +71,10 @@ app.post('/extract', async (req, res) => {
     const caption = normalized.caption;
 
     // 2. Download video to temp file
+    let t = Date.now();
     tmpVideo = path.join(os.tmpdir(), `xhs-video-${Date.now()}.mp4`);
     await downloadFile(videoUrl, tmpVideo);
+    console.log(`[timing] download: ${Date.now() - t}ms`); t = Date.now();
 
     // 3. Extract 12 evenly-spaced frames
     const NUM_FRAMES = 12;
@@ -95,6 +97,7 @@ app.post('/extract', async (req, res) => {
     }
 
     const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
+    console.log(`[timing] frame extraction: ${Date.now() - t}ms`); t = Date.now();
 
     // 4. Pass 1 — Haiku reads text overlay from each frame in parallel
     const ocrResults = await Promise.all(frameFiles.map(async (file) => {
@@ -127,6 +130,8 @@ app.post('/extract', async (req, res) => {
         uniqueFrames.push(file);
       }
     }
+
+    console.log(`[timing] haiku OCR: ${Date.now() - t}ms`); t = Date.now();
 
     // 5. Pass 2 — Opus analyzes only unique frames
     const userContent = [];
@@ -172,6 +177,7 @@ For each exercise you can identify from the frames, fill in name, sets/reps/dura
       messages: [{ role: 'user', content: userContent }],
     });
 
+    console.log(`[timing] opus analysis: ${Date.now() - t}ms`); t = Date.now();
     const rawText = response.content.find((b) => b.type === 'text')?.text ?? '';
     const text = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
     const workout = JSON.parse(text);
