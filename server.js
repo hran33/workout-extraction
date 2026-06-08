@@ -87,12 +87,22 @@ app.post('/extract', async (req, res) => {
     ).trim();
     const duration = parseFloat(probeOut) || 60;
 
-    // Extract all frames in one ffmpeg pass at full resolution
+    // Extract frames in parallel using fast seeks (no full video decode)
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+
     const fps = NUM_FRAMES / duration;
-    execSync(
-      `ffmpeg -i "${tmpVideo}" -vf "fps=${fps.toFixed(4)},scale=768:-1" "${tmpDir}/frame%04d.jpg" -y 2>/dev/null`,
-      { stdio: 'pipe' }
-    );
+    const interval = duration / (NUM_FRAMES + 1);
+    await Promise.all(Array.from({ length: NUM_FRAMES }, (_, i) => {
+      const ts = (interval * (i + 1)).toFixed(2);
+      const outFile = path.join(tmpDir, `frame${String(i + 1).padStart(4, '0')}.jpg`);
+      return execFileAsync('ffmpeg', [
+        '-ss', ts, '-i', tmpVideo,
+        '-frames:v', '1', '-vf', 'scale=768:-1',
+        outFile, '-y'
+      ]).catch(() => {});
+    }));
 
     const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
     console.log(`[timing] frame extraction: ${Date.now() - t}ms`); t = Date.now();
