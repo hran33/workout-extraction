@@ -76,7 +76,7 @@ app.post('/extract', async (req, res) => {
     await downloadFile(videoUrl, tmpVideo);
     console.log(`[timing] download: ${Date.now() - t}ms`); t = Date.now();
 
-    // 3. Extract 12 evenly-spaced frames
+    // 3. Extract evenly-spaced frames (OCR will dedupe down to unique exercises)
     const NUM_FRAMES = 12;
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhs-frames-'));
     const client = new Anthropic();
@@ -87,10 +87,10 @@ app.post('/extract', async (req, res) => {
     ).trim();
     const duration = parseFloat(probeOut) || 60;
 
-    // Extract all frames in one ffmpeg pass using fps filter
+    // Extract all frames in one ffmpeg pass using fps filter, scale down for speed
     const fps = NUM_FRAMES / duration;
     execSync(
-      `ffmpeg -i "${tmpVideo}" -vf "fps=${fps.toFixed(4)},scale=768:-1" "${tmpDir}/frame%04d.jpg" -y 2>/dev/null`,
+      `ffmpeg -i "${tmpVideo}" -vf "fps=${fps.toFixed(4)},scale=384:-1" "${tmpDir}/frame%04d.jpg" -y 2>/dev/null`,
       { stdio: 'pipe' }
     );
 
@@ -118,28 +118,42 @@ app.post('/extract', async (req, res) => {
       }
     }));
 
-    // Dedupe: keep only the first frame per unique label
+    // Dedupe: normalize label (lowercase, strip punctuation/spaces) before comparing
+    const normalize = s => s.toLowerCase().replace(/[^a-z0-9一-鿿]/g, '');
     const seenLabels = new Set();
     const uniqueFrames = [];
     for (const { file, label } of ocrResults) {
-      const key = label || file; // if no label, treat each frame as unique
+      const key = label ? normalize(label) : file;
       if (!seenLabels.has(key)) {
         seenLabels.add(key);
         uniqueFrames.push(file);
       }
     }
+    console.log(`[dedup] ${frameFiles.length} frames → ${uniqueFrames.length} unique`);
 
     console.log(`[timing] haiku OCR: ${Date.now() - t}ms`); t = Date.now();
 
-    // 5. Pass 2 — Opus analyzes only unique frames
+    // 5. Pass 2 — re-extract unique frames at full resolution for Opus
+    const fullResDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhs-full-'));
+    for (let i = 0; i < uniqueFrames.length; i++) {
+      const frameNum = parseInt(uniqueFrames[i].match(/\d+/)[0]);
+      const ts = ((frameNum - 1) / fps).toFixed(2);
+      execSync(
+        `ffmpeg -ss ${ts} -i "${tmpVideo}" -frames:v 1 -vf "scale=768:-1" "${fullResDir}/frame${String(i + 1).padStart(4, '0')}.jpg" -y 2>/dev/null`,
+        { stdio: 'pipe' }
+      );
+    }
+    console.log(`[timing] full-res extraction: ${Date.now() - t}ms`); t = Date.now();
+
     const userContent = [];
-    for (const file of uniqueFrames) {
-      const imgData = fs.readFileSync(path.join(tmpDir, file));
+    for (const file of fs.readdirSync(fullResDir).filter(f => f.endsWith('.jpg')).sort()) {
+      const imgData = fs.readFileSync(path.join(fullResDir, file));
       userContent.push({
         type: 'image',
         source: { type: 'base64', media_type: 'image/jpeg', data: imgData.toString('base64') },
       });
     }
+    fs.rmSync(fullResDir, { recursive: true, force: true });
 
     userContent.push({
       type: 'text',
@@ -199,8 +213,8 @@ For each exercise you can identify from the frames, fill in name, sets/reps/dura
     }
     const plainText = lines.join('\n');
 
-    // Read frames as base64 before cleanup
-    const frames = frameFiles.map(file => {
+    // Read unique frames as base64 before cleanup
+    const frames = uniqueFrames.map(file => {
       const imgData = fs.readFileSync(path.join(tmpDir, file));
       return imgData.toString('base64');
     });
