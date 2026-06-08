@@ -87,17 +87,17 @@ app.post('/extract', async (req, res) => {
     ).trim();
     const duration = parseFloat(probeOut) || 60;
 
-    // Extract all frames in one ffmpeg pass using fps filter, scale down for speed
+    // Extract all frames in one ffmpeg pass at full resolution
     const fps = NUM_FRAMES / duration;
     execSync(
-      `ffmpeg -i "${tmpVideo}" -vf "fps=${fps.toFixed(4)},scale=384:-1" "${tmpDir}/frame%04d.jpg" -y 2>/dev/null`,
+      `ffmpeg -i "${tmpVideo}" -vf "fps=${fps.toFixed(4)},scale=768:-1" "${tmpDir}/frame%04d.jpg" -y 2>/dev/null`,
       { stdio: 'pipe' }
     );
 
     const frameFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.jpg')).sort();
     console.log(`[timing] frame extraction: ${Date.now() - t}ms`); t = Date.now();
 
-    // 4. Pass 1 — Haiku reads text overlay from each frame in parallel
+    // 4. Haiku OCR — read text overlay from each frame in parallel to dedupe
     const ocrResults = await Promise.all(frameFiles.map(async (file) => {
       const imgData = fs.readFileSync(path.join(tmpDir, file));
       try {
@@ -118,7 +118,7 @@ app.post('/extract', async (req, res) => {
       }
     }));
 
-    // Dedupe: normalize label (lowercase, strip punctuation/spaces) before comparing
+    // Dedupe by normalized label
     const normalize = s => s.toLowerCase().replace(/[^a-z0-9一-鿿]/g, '');
     const seenLabels = new Set();
     const uniqueFrames = [];
@@ -130,31 +130,17 @@ app.post('/extract', async (req, res) => {
       }
     }
     console.log(`[dedup] ${frameFiles.length} frames → ${uniqueFrames.length} unique`);
-
     console.log(`[timing] haiku OCR: ${Date.now() - t}ms`); t = Date.now();
 
-    // 5. Pass 2 — re-extract unique frames at full resolution for Opus
-    const fullResDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhs-full-'));
-    for (let i = 0; i < uniqueFrames.length; i++) {
-      const frameNum = parseInt(uniqueFrames[i].match(/\d+/)[0]);
-      const ts = ((frameNum - 1) / fps).toFixed(2);
-      execSync(
-        `ffmpeg -ss ${ts} -i "${tmpVideo}" -frames:v 1 -vf "scale=768:-1" "${fullResDir}/frame${String(i + 1).padStart(4, '0')}.jpg" -y 2>/dev/null`,
-        { stdio: 'pipe' }
-      );
-    }
-    console.log(`[timing] full-res extraction: ${Date.now() - t}ms`); t = Date.now();
-
+    // 5. Build Opus content from already-extracted unique frames (no second ffmpeg pass)
     const userContent = [];
-    for (const file of fs.readdirSync(fullResDir).filter(f => f.endsWith('.jpg')).sort()) {
-      const imgData = fs.readFileSync(path.join(fullResDir, file));
+    for (const file of uniqueFrames) {
+      const imgData = fs.readFileSync(path.join(tmpDir, file));
       userContent.push({
         type: 'image',
         source: { type: 'base64', media_type: 'image/jpeg', data: imgData.toString('base64') },
       });
     }
-    fs.rmSync(fullResDir, { recursive: true, force: true });
-
     userContent.push({
       type: 'text',
       text: `The images above are evenly-spaced frames from a Xiaohongshu (RedNote) fitness video.
