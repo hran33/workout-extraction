@@ -169,11 +169,11 @@ For each exercise you can identify from the frames, fill in name, sets/reps/dura
     const response = await client.messages.create({
       model: 'claude-opus-4-8',
       max_tokens: 2048,
-      thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: userContent }],
     });
 
-    const text = response.content.find((b) => b.type === 'text')?.text ?? '';
+    const rawText = response.content.find((b) => b.type === 'text')?.text ?? '';
+    const text = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
     const workout = JSON.parse(text);
 
     // Build plain text
